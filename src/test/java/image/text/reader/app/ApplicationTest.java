@@ -28,4 +28,14 @@ public class ApplicationTest {
         long duration = (System.nanoTime() - start) / 1_000_000;
         System.out.println("Done in " + duration + " msecs");
     }
+
+    @Test
+    public void testPDF2pagenum() {
+        ///tmp/scraper/71088 GG.pdf
+        long start = System.nanoTime();
+        byte[] image = pdfService.textImageFromPdf("/tmp/scrapers/71088 GG.pdf", "BILL OF LADING", 12);
+        System.out.println(image);
+        long duration = (System.nanoTime() - start) / 1_000_000;
+        System.out.println("Done in " + duration + " msecs");
+    }
 }

@@ -47,7 +47,9 @@ dependencies {
     compile group: 'com.fasterxml.jackson.core', name: 'jackson-core', version: '2.9.9'
     compile group: 'org.apache.pdfbox', name: 'pdfbox', version: '2.0.17'
     compile group: 'net.sourceforge.tess4j', name: 'tess4j', version: '3.2.1'
-
+    compile group: 'com.amazonaws', name: 'aws-java-sdk-s3', version: '1.11.699'
+    compile group: 'com.amazonaws', name: 'aws-java-sdk-rekognition', version: '1.11.699'
+    compile group: 'org.apache.commons', name: 'commons-lang3', version: '3.9'
     compile("org.springframework.integration:spring-integration-core")
 
     annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'

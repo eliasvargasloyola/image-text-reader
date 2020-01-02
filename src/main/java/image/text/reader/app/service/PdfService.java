@@ -1,8 +1,12 @@
 package image.text.reader.app.service;
 
-import net.sourceforge.tess4j.ITesseract;
-import net.sourceforge.tess4j.Tesseract;
-import org.apache.pdfbox.contentstream.PDFStreamEngine;
+import com.amazonaws.services.rekognition.AmazonRekognition;
+import com.amazonaws.services.rekognition.model.AmazonRekognitionException;
+import com.amazonaws.services.rekognition.model.DetectTextRequest;
+import com.amazonaws.services.rekognition.model.DetectTextResult;
+import com.amazonaws.services.rekognition.model.Image;
+import com.amazonaws.services.rekognition.model.TextDetection;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.pdfbox.cos.COSDocument;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.io.RandomAccessFile;
@@ -16,93 +20,143 @@ import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 @Service
-public class PdfService extends PDFStreamEngine {
+public class PdfService {
 
-    public int imageNumber = 1;
+    AmazonRekognition rekognitionClient;
+
+    public PdfService(AmazonRekognition rekognitionClient) {
+        this.rekognitionClient = rekognitionClient;
+    }
 
     public List<byte[]> getPages2PDF(String nameFile, String str2Find) {
-        long start = System.nanoTime();
-        PDFParser parser = null;
         PDDocument pdDoc = null;
         COSDocument cosDoc = null;
         File file = new File(nameFile);
+
         List<CompletableFuture<byte[]>> asyncs = new ArrayList<>();
 
         try {
-            Executor exe = Executors.newFixedThreadPool(25, r -> {
+
+            Executor exe = Executors.newFixedThreadPool(10, r -> {
                 Thread t = new Thread(r);
                 t.setDaemon(true);
                 return t;
             });
 
-            parser = new PDFParser(new RandomAccessFile(file, "r"));
+            PDFParser parser = new PDFParser(new RandomAccessFile(file, "r"));
             parser.parse();
             cosDoc = parser.getDocument();
             pdDoc = new PDDocument(cosDoc);
             PDPageTree tree = pdDoc.getPages();
+            AtomicInteger pageNum = new AtomicInteger();
+
             Stream<PDPage> paralelStreamDoc = StreamSupport.stream(tree.spliterator(), true);
             asyncs = paralelStreamDoc.map(o -> CompletableFuture.supplyAsync(() -> {
                 PDResources pdResources = o.getResources();
-                for (COSName c : pdResources.getXObjectNames()) {
-                    try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
-                        PDXObject pdx = pdResources.getXObject(c);
-                        if (pdx instanceof PDImageXObject) {
-                            imageNumber++;
-                            ImageIO.write(((PDImageXObject) pdx).getImage(), "png", outputStream);
-                            byte[] response = outputStream.toByteArray();
-                            findTextImage(str2Find, response);
-                            outputStream.close();
-                            System.out.println("============ IMAGES READY [" + imageNumber + "] ==================");
-                            return response;
-                        }
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                }
-                return null;
+                Stream<COSName> paralelStreamCos = StreamSupport.stream(pdResources.getXObjectNames().spliterator(), true);
+                pageNum.getAndIncrement();
+                System.out.println("Page processings ..." + pageNum);
+                return paralelStreamCos.map(cosName -> this.findText(cosName, pdResources, str2Find)).filter(Objects::nonNull).findFirst().orElse(null);
             }, exe)).collect(Collectors.toList());
 
         } catch (Exception e) {
             e.printStackTrace();
-            try {
-                if (cosDoc != null)
-                    cosDoc.close();
-                if (pdDoc != null)
-                    pdDoc.close();
-            } catch (Exception e1) {
-                e1.printStackTrace();
-            }
         }
-        long duration = (System.nanoTime() - start) / 1_000_000;
-        System.out.println("Done in " + duration + " msecs");
-        return asyncs.stream().map(CompletableFuture::join).collect(Collectors.toList());
+        List<byte[]> response = asyncs.stream().map(CompletableFuture::join).filter(Objects::nonNull).collect(Collectors.toList());
+        closeAll(pdDoc, cosDoc);
+        return response;
     }
 
-    public boolean findTextImage(String text2find, byte[] image) {
-        try (ByteArrayInputStream input = new ByteArrayInputStream(image)) {
-            ITesseract instance = new Tesseract();
-            BufferedImage bufferImage = ImageIO.read(input);
-            String imgText = instance.doOCR(bufferImage);
-            System.out.println(imgText);
-            return imgText.toLowerCase().contains(text2find.toLowerCase());
+    public byte[] textImageFromPdf(String nameFile, String str2Find, int numPage) {
+        PDDocument pdDoc = null;
+        COSDocument cosDoc = null;
+        File file = new File(nameFile);
+        byte[] response = null;
+
+        try {
+            PDFParser parser = new PDFParser(new RandomAccessFile(file, "r"));
+            parser.parse();
+            cosDoc = parser.getDocument();
+            pdDoc = new PDDocument(cosDoc);
+            PDPage page = pdDoc.getPage(numPage);
+            PDResources pdResources = page.getResources();
+            Stream<COSName> paralelStreamCos = StreamSupport.stream(pdResources.getXObjectNames().spliterator(), false);
+            return paralelStreamCos.map(cosName -> this.findText(cosName, pdResources, str2Find)).filter(Objects::nonNull).findFirst().orElse(null);
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            closeAll(pdDoc, cosDoc);
+        }
+
+        return response;
+    }
+
+    private void closeAll(PDDocument pdDoc, COSDocument cosDoc) {
+        try {
+            if (cosDoc != null)
+                cosDoc.close();
+            if (pdDoc != null)
+                pdDoc.close();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private byte[] findText(COSName c, PDResources pdResources, String str2Find) {
+        byte[] tmp = null;
+        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+            PDXObject pdx = pdResources.getXObject(c);
+            if (pdx instanceof PDImageXObject) {
+                ImageIO.write(((PDImageXObject) pdx).getImage(), "png", outputStream);
+                if (findTextImageAWS(str2Find, outputStream.toByteArray())) {
+                    tmp = outputStream.toByteArray();
+                }
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return false;
+        return tmp;
+    }
+
+    private boolean findTextImageAWS(String text2find, byte[] inputImage) {
+
+        ByteBuffer imageByte = ByteBuffer.wrap(inputImage);
+
+        List<String> array2Find = Arrays.asList(text2find.split("\n"));
+        List<TextDetection> resultDetection = new ArrayList<>();
+
+        DetectTextRequest request = new DetectTextRequest()
+                .withImage(new Image().withBytes(imageByte));
+
+        try {
+            DetectTextResult result = rekognitionClient.detectText(request);
+            List<TextDetection> textDetections = result.getTextDetections();
+            resultDetection = textDetections.stream()
+                    .filter(detection ->
+                            array2Find.stream()
+                                    .anyMatch(s -> StringUtils.containsIgnoreCase(detection.getDetectedText(), s)))
+                    .collect(Collectors.toList());
+        } catch (AmazonRekognitionException e) {
+            e.printStackTrace();
+        }
+
+        return !resultDetection.isEmpty();
     }
 
 }
