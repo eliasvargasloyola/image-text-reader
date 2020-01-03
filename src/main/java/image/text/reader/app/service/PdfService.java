@@ -13,6 +13,7 @@ import org.apache.pdfbox.io.RandomAccessFile;
 import org.apache.pdfbox.pdfparser.PDFParser;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.PDPageTree;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
@@ -22,9 +23,11 @@ import org.springframework.stereotype.Service;
 import javax.imageio.ImageIO;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -44,7 +47,7 @@ public class PdfService {
         this.rekognitionClient = rekognitionClient;
     }
 
-    public List<byte[]> getPages2PDF(String nameFile, String str2Find) {
+    public String getPages2PDF(String nameFile, String str2Find, String directory) {
         PDDocument pdDoc = null;
         COSDocument cosDoc = null;
         File file = new File(nameFile);
@@ -53,7 +56,7 @@ public class PdfService {
 
         try {
 
-            Executor exe = Executors.newFixedThreadPool(10, r -> {
+            Executor exe = Executors.newFixedThreadPool(3, r -> {
                 Thread t = new Thread(r);
                 t.setDaemon(true);
                 return t;
@@ -78,9 +81,9 @@ public class PdfService {
         } catch (Exception e) {
             e.printStackTrace();
         }
-        List<byte[]> response = asyncs.stream().map(CompletableFuture::join).filter(Objects::nonNull).collect(Collectors.toList());
+        List<byte[]> images = asyncs.stream().map(CompletableFuture::join).filter(Objects::nonNull).collect(Collectors.toList());
         closeAll(pdDoc, cosDoc);
-        return response;
+        return toFile(images, directory);
     }
 
     public byte[] textImageFromPdf(String nameFile, String str2Find, int numPage) {
@@ -157,6 +160,38 @@ public class PdfService {
         }
 
         return !resultDetection.isEmpty();
+    }
+
+    private String toFile(List<byte[]> images, String directory) {
+        String fullPath = directory.concat("/result_" + new Date().getTime() + ".pdf");
+        PDDocument doc = new PDDocument();
+        try {
+            images.forEach(imageBytes -> {
+                PDPageContentStream contents = null;
+                PDPage page = new PDPage();
+                doc.addPage(page);
+                try {
+                    PDImageXObject pdImage = PDImageXObject.createFromByteArray(doc, imageBytes, "Image" + new Date().getTime());
+                    contents = new PDPageContentStream(doc, page);
+                    contents.drawImage(pdImage, -10, 50, (float) (pdImage.getWidth() / 4.5), (float) (pdImage.getHeight() / 4.4));
+                } catch (IOException e) {
+                    e.printStackTrace();
+                } finally {
+                    try {
+                        if (contents != null)
+                            contents.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
+            doc.save(fullPath);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        closeAll(doc, null);
+        return fullPath;
     }
 
 }

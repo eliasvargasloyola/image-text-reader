@@ -10,8 +10,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit4.SpringRunner;
 
-import java.util.List;
-
 @RunWith(SpringRunner.class)
 @SpringBootTest
 public class ApplicationTest {
@@ -23,8 +21,8 @@ public class ApplicationTest {
     public void testPDF2() {
         ///tmp/scraper/71088 GG.pdf
         long start = System.nanoTime();
-        List<byte[]> images = pdfService.getPages2PDF("/tmp/scrapers/71088 GG.pdf", "BILL OF LADING");
-        System.out.println("============ IMAGES LOAD [" + images.size() + "] ==================");
+        String newFileCreated = pdfService.getPages2PDF("/tmp/scrapers/71088 GG.pdf", "BILL OF LADING", "/tmp/scrapers/");
+        System.out.println("============ IMAGES LOAD ON [" + newFileCreated + "] ==================");
         long duration = (System.nanoTime() - start) / 1_000_000;
         System.out.println("Done in " + duration + " msecs");
     }
