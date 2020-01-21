@@ -3,6 +3,8 @@
  */
 package image.text.reader.app;
 
+import image.text.reader.app.domain.ResultTextAws;
+import image.text.reader.app.domain.TextExtractAws;
 import image.text.reader.app.service.PdfService;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -21,8 +23,9 @@ public class ApplicationTest {
     public void testPDF2() {
         ///tmp/scraper/71088 GG.pdf
         long start = System.nanoTime();
-        String newFileCreated = pdfService.getPages2PDF("/tmp/scrapers/71088 GG.pdf", "BILL OF LADING", "/tmp/scrapers/");
-        System.out.println("============ IMAGES LOAD ON [" + newFileCreated + "] ==================");
+        ResultTextAws res = pdfService.getPages2PDF("/tmp/scrapers/71088 GG.pdf", "BILL OF LADING", "/tmp/scrapers/");
+        System.out.println("============ IMAGES LOAD ON [" + res.getResultDoc() + "] ==================");
+        System.out.println("============ BOLS NUMS ARE [" + res.getBolNums().toString() + "] ==================");
         long duration = (System.nanoTime() - start) / 1_000_000;
         System.out.println("Done in " + duration + " msecs");
     }
@@ -31,7 +34,7 @@ public class ApplicationTest {
     public void testPDF2pagenum() {
         ///tmp/scraper/71088 GG.pdf
         long start = System.nanoTime();
-        byte[] image = pdfService.textImageFromPdf("/tmp/scrapers/71088 GG.pdf", "BILL OF LADING", 12);
+        TextExtractAws image = pdfService.textImageFromPdf("/tmp/scrapers/71088 GG.pdf", "BILL OF LADING", 12);
         System.out.println(image);
         long duration = (System.nanoTime() - start) / 1_000_000;
         System.out.println("Done in " + duration + " msecs");

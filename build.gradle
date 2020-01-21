@@ -40,6 +40,12 @@ version = '0.0.1-SNAPSHOT'
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
 
+test {
+    jvmArgs "-XX:PermSize=4096m -XX:MaxPermSize=4096m"
+    minHeapSize = "4096m"
+    maxHeapSize = "4096m"
+}
+
 dependencies {
     compile group: 'org.springframework.boot', name: 'spring-boot-starter-web', version: springboot
     compile group: 'org.springframework.boot', name: 'spring-boot-starter-parent', version: springboot
